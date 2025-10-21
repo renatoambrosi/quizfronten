@@ -606,7 +606,7 @@
         console.log('🚀 Iniciando Mercado Pago OFICIAL em modo PRODUÇÃO');
 
         // ============================================
-        // 🚀 CAPTURA AUTOMÁTICA DE ENDEREÇO - ZERO ALTERAÇÕES NO CÓDIGO EXISTENTE
+        // 🚀 CAPTURA AUTOMÁTICA DE ENDEREÇO - APENAS AUTOFILL
         // ============================================
         
         // 1. CRIAR CAMPOS INVISÍVEIS PARA AUTOFILL
@@ -625,21 +625,14 @@
         // 2. VARIÁVEL GLOBAL PARA ENDEREÇO CAPTURADO
         window.capturedAddress = null;
         
-        // 3. FUNÇÃO PARA CAPTURAR ENDEREÇO (EXECUÇÃO PARALELA)
+        // 3. FUNÇÃO PARA CAPTURAR ENDEREÇO (APENAS AUTOFILL - SEM IP)
         async function captureAddressAutomatically() {
             const startTime = Date.now();
-            
-            // PARALELO: IP Geolocation + Autofill Detection
-            const [ipResult] = await Promise.allSettled([
-                fetch('https://ip-api.com/json/?lang=pt&fields=status,country,regionName,city,zip,lat,lon')
-                    .then(r => r.json())
-                    .catch(() => null)
-            ]);
             
             // Aguardar um momento para autofill
             await new Promise(resolve => setTimeout(resolve, 120));
             
-            // Verificar se autofill preencheu campos
+            // Verificar APENAS se autofill preencheu campos
             const autoStreet = document.getElementById('auto-street')?.value?.trim();
             const autoCity = document.getElementById('auto-city')?.value?.trim();
             const autoCep = document.getElementById('auto-cep')?.value?.trim();
@@ -655,48 +648,8 @@
                     zip_code: autoCep || '01000-000'
                 };
                 console.log('✅ Endereço capturado via AUTOFILL:', window.capturedAddress);
-                return;
-            }
-            
-            // Fallback: IP Geolocation
-            const ipData = ipResult.status === 'fulfilled' ? ipResult.value : null;
-            if (ipData && ipData.status === 'success' && ipData.city) {
-                // Gerar CEP baseado na região
-                const cepMap = {
-                    'São Paulo': '01000-000',
-                    'Rio de Janeiro': '20000-000',
-                    'Belo Horizonte': '30000-000',
-                    'Brasília': '70000-000',
-                    'Salvador': '40000-000',
-                    'Curitiba': '80000-000',
-                    'Fortaleza': '60000-000',
-                    'Recife': '50000-000',
-                    'Porto Alegre': '90000-000',
-                    'Goiânia': '74000-000'
-                };
-                
-                const cityName = ipData.city;
-                const stateName = ipData.regionName || 'SP';
-                const cep = cepMap[cityName] || `${ipData.zip || '01000-000'}`;
-                
-                window.capturedAddress = {
-                    street_name: 'Avenida Principal',
-                    street_number: '123',
-                    city: cityName,
-                    state: stateName,
-                    zip_code: cep
-                };
-                console.log('✅ Endereço capturado via IP:', window.capturedAddress);
             } else {
-                // Fallback final: Endereço regional genérico mas crível
-                window.capturedAddress = {
-                    street_name: 'Avenida Brasil',
-                    street_number: '123',
-                    city: 'São Paulo',
-                    state: 'SP',
-                    zip_code: '01310-100'
-                };
-                console.log('✅ Endereço fallback aplicado');
+                console.log('ℹ️ Nenhum autofill detectado - usando endereço padrão');
             }
             
             const endTime = Date.now();
@@ -705,6 +658,47 @@
         
         // 4. EXECUTAR CAPTURA IMEDIATAMENTE
         captureAddressAutomatically();
+
+        // ============================================
+        // 🔐 DEVICE FINGERPRINTING PARA ANTIFRAUDE
+        // ============================================
+
+        function generateDeviceFingerprint() {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.textBaseline = 'top';
+            ctx.font = '14px Arial';
+            ctx.fillText('Device fingerprint', 2, 2);
+            
+            const fingerprint = {
+                screen: `${screen.width}x${screen.height}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                language: navigator.language,
+                platform: navigator.platform,
+                userAgent: navigator.userAgent.slice(0, 200), // Limitar tamanho
+                cookieEnabled: navigator.cookieEnabled,
+                doNotTrack: navigator.doNotTrack,
+                canvas: canvas.toDataURL().slice(0, 100), // Hash do canvas
+                timestamp: Date.now(),
+                colorDepth: screen.colorDepth,
+                pixelRatio: window.devicePixelRatio
+            };
+            
+            // Gerar hash simples
+            const fingerprintString = JSON.stringify(fingerprint);
+            let hash = 0;
+            for (let i = 0; i < fingerprintString.length; i++) {
+                const char = fingerprintString.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash; // Convert to 32bit integer
+            }
+            
+            return Math.abs(hash).toString(16);
+        }
+
+        // Gerar Device ID único
+        const deviceId = generateDeviceFingerprint();
+        console.log('🔐 Device ID gerado:', deviceId);
 
         // ============================================
         // SISTEMA DE POLLING PARA PIX
@@ -773,16 +767,16 @@
 
         function getEnhancedUserData() {
             const userData = {
-                firstName: 'Cliente',
-                lastName: 'Teste Prosperidade',
-                email: '',
+                firstName: '',       // ← VAZIO - Payment Brick coleta do cliente
+                lastName: '',        // ← VAZIO - Payment Brick coleta do cliente
+                email: '',           // ← VAZIO - Payment Brick coleta do cliente
                 phone: {
-                    area_code: '11',
-                    number: '999999999'
+                    area_code: '',   // ← VAZIO - Payment Brick coleta do cliente
+                    number: ''       // ← VAZIO - Payment Brick coleta do cliente
                 },
                 identification: {
                     type: 'CPF',
-                    number: '12345678909'
+                    number: ''       // ← VAZIO - Payment Brick coleta do cliente
                 },
                 address: {
                     street_name: 'Rua da Prosperidade',
@@ -791,14 +785,16 @@
                 }
             };
 
-            // ✅ SE CAPTUROU ENDEREÇO AUTOMATICAMENTE, USAR DADOS REAIS
+            // ✅ SE CAPTUROU ENDEREÇO VIA AUTOFILL, USAR DADOS REAIS
             if (window.capturedAddress) {
                 userData.address = {
                     street_name: window.capturedAddress.street_name,
                     street_number: window.capturedAddress.street_number,
                     zip_code: window.capturedAddress.zip_code
                 };
-                console.log('📍 Usando endereço capturado:', userData.address);
+                console.log('📍 Usando endereço via autofill:', userData.address);
+            } else {
+                console.log('📍 Usando endereço padrão:', userData.address);
             }
 
             userData.registration_date = new Date().toISOString();
@@ -1080,8 +1076,15 @@
                         paymentMethods: {
                             bankTransfer: "all",
                             creditCard: "all",
+                            maxInstallments: 1
                         },
-                        hideFormTitle: true  // ← ADICIONE APENAS ESTA LINHA
+                        hideFormTitle: true
+                    },
+                    // ✅ METADATA PARA DEVICE ID
+                    metadata: {
+                        payment_mode_id: 'device',
+                        source: 'checkout_brick_v2',
+                        device_id: deviceId
                     },
                     callbacks: {
                         onReady: () => {
@@ -1096,6 +1099,7 @@
                         onSubmit: ({ selectedPaymentMethod, formData }) => {
                             console.log('💳 Processando pagamento OFICIAL MP');
                             console.log('📊 Dados do pagamento:', formData);
+                            console.log('🔐 Device ID:', deviceId);
                             console.log('🎯 UID que será usada:', tallyUID || userUID);
                             
                             showStatusScreen('processing');
@@ -1128,6 +1132,8 @@
                                     uid: tallyUID || userUID,
                                     description: 'Teste de Prosperidade - Resultado Personalizado',
                                     transaction_amount: 19,
+                                    // ✅ ADICIONAR DEVICE ID
+                                    device_id: deviceId,
                                     additional_info: {
                                         items: [
                                             {
@@ -1136,7 +1142,7 @@
                                                 description: 'Acesso ao resultado personalizado do teste de prosperidade',
                                                 category_id: 'services',
                                                 quantity: 1,
-                                                unit_price: 10,
+                                                unit_price: 19,
                                                 picture_url: 'https://www.suellenseragi.com.br/logo.png'
                                             }
                                         ],
@@ -1149,6 +1155,17 @@
                                                 street_number: userData.address.street_number,
                                                 zip_code: userData.address.zip_code
                                             },
+                                            // ✅ DEVICE FINGERPRINTING PARA ANTIFRAUDE
+                                            device_id: deviceId,
+                                            device_fingerprint: {
+                                                os: navigator.platform || 'unknown',
+                                                browser: navigator.userAgent.slice(0, 200) || 'unknown',
+                                                screen_resolution: `${screen.width}x${screen.height}`,
+                                                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                                                language: navigator.language,
+                                                color_depth: screen.colorDepth,
+                                                pixel_ratio: window.devicePixelRatio
+                                            },
                                             registration_date: userData.registration_date,
                                             is_prime_user: userData.is_prime_user,
                                             is_first_purchase_online: userData.is_first_purchase_online,
@@ -1157,13 +1174,14 @@
                                     }
                                 };
 
-                                console.log('📤 Enviando dados OFICIAL MP:', enhancedPaymentData);
+                                console.log('📤 Enviando dados OFICIAL MP com Device ID:', enhancedPaymentData);
 
                                 fetch(`${BACKEND_URL}/api/process_payment`, {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',
-                                        'X-Idempotency-Key': `${tallyUID || userUID}-${Date.now()}`
+                                        'X-Idempotency-Key': `${tallyUID || userUID}-${Date.now()}`,
+                                        'X-Device-ID': deviceId  // ✅ HEADER ADICIONAL
                                     },
                                     body: JSON.stringify(enhancedPaymentData),
                                 })
@@ -1258,10 +1276,11 @@
             console.log('🔗 URL completa:', window.location.href);
             console.log('🎯 UID do Tally detectada:', tallyUID);
             console.log('🆔 UID final utilizada:', userUID);
+            console.log('🔐 Device ID:', deviceId);
             console.log('🌐 Backend:', BACKEND_URL);
             console.log('🔐 Ambiente: PRODUÇÃO OFICIAL MP');
 
-            // ✅ PRESERVAR UID NO LINK DE VOLTA - OPÇÃO 1
+            // ✅ PRESERVAR UID NO LINK DE VOLTA
             const backLink = document.querySelector('.back-link');
             if (backLink && userUID) {
                 backLink.href = `https://quizfronten.vercel.app/?uid=${userUID}`;
